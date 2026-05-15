@@ -16,6 +16,13 @@ Config.EMSJobs = {                  -- Jobs that are counted as EMS
 
 Config.Price = 2000 -- Price of the service
 
+Config.SkillCheck = {
+    enabled = false,                         -- Enable skill check to reduce price
+    difficulty = { 'easy', 'easy', 'medium' }, -- ox_lib skill check difficulty sequence
+    inputs = { 'w', 'a', 's', 'd' },         -- Keys for the skill check
+    discount = 40,                           -- Percentage discount if skill check is passed (40 = 40% off)
+}
+
 -- 787004 = emergency driving (ignore traffic lights)
 -- 786603 = Normal driving with traffic lights
 Config.AmbulanceDriveFlag = 787004

@@ -16,6 +16,14 @@
   "service_cancelled": "Servicio médico cancelado",
   "no_permissions": "No tienes permisos para este comando",
   "stats_message": "EMS Online: %s | Precio: $%s",
+  "skill_check_prompt": "Intenta estabilizarte para reducir el coste del servicio...",
+  "skill_check_success": "¡Bien hecho! Has conseguido un %s%% de descuento. Precio final: $%s",
+  "skill_check_fail": "No has conseguido el descuento. Precio completo: $%s",
+  "doctor_arrived": "El paramédico ha llegado. Iniciando evaluación...",
+  "examining_patient": "Examinando al paciente...",
+  "receiving_cpr": "Realizando reanimación cardiopulmonar...",
+  "checking_vitals": "Comprobando signos vitales...",
+  "applying_defibrillator": "Aplicando desfibrilador...",
   "update_available": "[muhaddil_aidoctor] - Nueva versión disponible",
   "up_to_date": "[muhaddil_aidoctor] - Actualizado",
   "current_version": "Versión actual: %s",
@@ -28,8 +36,10 @@
   "no_download": "No hay enlace de descarga disponible",
   "today": "Hoy",
   "yesterday": "Ayer",
-  "days_ago": "hace %s días",
+  "days_ago": "hace %s días", 
   "server_print_1": "^2[AI Doctor] Sistema cargado correctamente^0",
   "server_print_2": "^3[AI Doctor] Framework detectado: %s^0",
-  "server_print_3": "^3[AI Doctor] Precio configurado: $%s^0"
+  "server_print_3": "^3[AI Doctor] Precio configurado: $%s^0",
+  "server_print_error": "^1[AI Doctor] Error: No se pudo cobrar al jugador %s^0",
+  "notification_title": "SAMS"
 }

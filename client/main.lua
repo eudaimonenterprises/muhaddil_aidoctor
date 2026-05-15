@@ -138,6 +138,34 @@ local function CleanupService()
     isServiceActive = false
 end
 
+local function LoadAnimDicts(dicts)
+    for _, dict in ipairs(dicts) do
+        RequestAnimDict(dict)
+    end
+    for _, dict in ipairs(dicts) do
+        while not HasAnimDictLoaded(dict) do Wait(10) end
+    end
+end
+
+local function GetCPRPosition(patientPed)
+    local patientCoords = GetEntityCoords(patientPed)
+    local patientHeading = GetEntityHeading(patientPed)
+    local headingRad = math.rad(patientHeading)
+
+    local rightX = math.cos(headingRad)
+    local rightY = math.sin(headingRad)
+
+    local cprPos = vector3(
+        patientCoords.x - rightX * 0.45,
+        patientCoords.y - rightY * 0.45,
+        patientCoords.z
+    )
+
+    local doctorHeading = (patientHeading - 90.0 + 360.0) % 360.0
+
+    return cprPos, doctorHeading
+end
+
 if Framework == 'esx' then
     RegisterNetEvent('esx:onPlayerDeath', function()
         isDead = true
@@ -158,26 +186,47 @@ end
 
 RegisterCommand("aidoctor", function()
     if isServiceActive then
-        Notify("SAMS", locale('service_active'), 5000, "error")
+        Notify(locale('notification_title'), locale('service_active'), 5000, "error")
         return
     end
 
     if not IsPlayerDead() then
-        Notify("SAMS", locale('no_assistance_needed'), 5000, "error")
+        Notify(locale('notification_title'), locale('no_assistance_needed'), 5000, "error")
         return
     end
 
     TriggerFWCallback('muhaddil_aidoctor:checkConditions', function(EMSOnline, hasMoney)
         if EMSOnline > Config.EMS then
             isServiceActive = false
-            Notify("SAMS", locale('too_many_ems'), 5000, "error")
+            Notify(locale('notification_title'), locale('too_many_ems'), 5000, "error")
         elseif not hasMoney then
             isServiceActive = false
-            Notify("SAMS", locale('not_enough_money', Config.Price), 5000, "error")
+            Notify(locale('notification_title'), locale('not_enough_money', Config.Price), 5000, "error")
         else
             if isServiceActive then return end
             isServiceActive = true
-            TriggerServerEvent("muhaddil_aidoctor:chargePlayer")
+
+            local skillCheckPassed = false
+            if Config.SkillCheck and Config.SkillCheck.enabled then
+                Notify(locale('notification_title'), locale('skill_check_prompt'), 5000, "info")
+                Wait(1000)
+
+                local success = lib.skillCheck(Config.SkillCheck.difficulty, Config.SkillCheck.inputs)
+
+                if success then
+                    skillCheckPassed = true
+                    local discountedPrice = math.floor(Config.Price * (1 - Config.SkillCheck.discount / 100))
+                    Notify(locale('notification_title'),
+                        locale('skill_check_success', Config.SkillCheck.discount, discountedPrice), 5000,
+                        "success")
+                else
+                    Notify(locale('notification_title'), locale('skill_check_fail', Config.Price), 5000, "error")
+                end
+
+                Wait(1500)
+            end
+
+            TriggerServerEvent("muhaddil_aidoctor:chargePlayer", skillCheckPassed)
             TriggerEvent("muhaddil_aidoctor:reviveNPC")
         end
     end)
@@ -202,13 +251,30 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
     local spawnPos, heading = GetDistantRoadPoint(playerCoords, minSpawnDistance, maxSpawnDistance)
 
     if not spawnPos then
-        Notify("SAMS", locale('road_not_found'), 5000, "error")
+        Notify(locale('notification_title'), locale('road_not_found'), 5000, "error")
         isServiceActive = false
         return
     end
 
     currentAmbulance = CreateVehicle(vehicleHash, spawnPos, heading, true, false)
     currentDoctor = CreatePedInsideVehicle(currentAmbulance, 4, pedHash, -1, true, false)
+
+    SetEntityInvincible(currentDoctor, true)
+    SetPedCanRagdoll(currentDoctor, false)
+    SetPedCanRagdollFromPlayerImpact(currentDoctor, false)
+    SetPedDiesWhenInjured(currentDoctor, false)
+    SetPedSuffersCriticalHits(currentDoctor, false)
+    SetPedKeepTask(currentDoctor, true)
+    SetBlockingOfNonTemporaryEvents(currentDoctor, true)
+    SetPedFleeAttributes(currentDoctor, 0, false)
+    SetPedCombatAttributes(currentDoctor, 17, true)
+    SetPedCombatAttributes(currentDoctor, 5, false)
+    SetPedCombatAttributes(currentDoctor, 46, true)
+    SetPedCanBeDraggedOut(currentDoctor, false)
+    SetPedCanBeKnockedOffVehicle(currentDoctor, 1)
+    SetEntityProofs(currentDoctor, true, true, true, true, true, true, true, true)
+    SetPedConfigFlag(currentDoctor, 32, false)
+    SetPedConfigFlag(currentDoctor, 281, true)
 
     SetVehicleSiren(currentAmbulance, true)
     SetSirenWithNoDriver(currentAmbulance, true)
@@ -238,7 +304,7 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
         RemoveBlip(ambuBlip)
     end)
 
-    Notify("SAMS", locale('ambulance_en_route'), 5000, "success")
+    Notify(locale('notification_title'), locale('ambulance_en_route'), 5000, "success")
 
     TaskVehicleDriveToCoord(currentDoctor, currentAmbulance, playerCoords.x, playerCoords.y, playerCoords.z,
         Config.DriveSpeedLevel, 0, vehicleHash, Config.AmbulanceDriveFlag, 2.0, true)
@@ -250,7 +316,7 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
             Wait(500)
             if not DoesEntityExist(currentAmbulance) then
                 CleanupService()
-                Notify("SAMS", locale('service_interrupted'), 5000, "error")
+                Notify(locale('notification_title'), locale('service_interrupted'), 5000, "error")
                 return
             end
 
@@ -267,19 +333,23 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
                 ClearPedTasksImmediately(currentDoctor)
                 SetPedCanBeKnockedOffVehicle(currentDoctor, 1)
 
-                TaskGoToCoordAnyMeans(currentDoctor, meetPos.x, meetPos.y, meetPos.z, 1.5, 0, 0, 786603, 0xbf800000)
+                local cprPos, doctorHeading = GetCPRPosition(playerPed)
+                TaskGoToCoordAnyMeans(currentDoctor, cprPos.x, cprPos.y, cprPos.z, 1.5, 0, 0, 786603, 0xbf800000)
 
                 local docArrived = false
                 while not docArrived and isServiceActive do
                     Wait(250)
                     local docCoords = GetEntityCoords(currentDoctor)
-                    local docDist = #(docCoords - meetPos)
+                    local docDist = #(docCoords - cprPos)
 
-                    if docDist < 3.0 then
+                    if docDist < 2.0 then
                         docArrived = true
                         ClearPedTasksImmediately(currentDoctor)
-                        TaskTurnPedToFaceEntity(currentDoctor, playerPed, 2000)
-                        Wait(1000)
+
+                        SetEntityCoords(currentDoctor, cprPos.x, cprPos.y, cprPos.z, false, false, false, false)
+                        SetEntityHeading(currentDoctor, doctorHeading)
+                        Wait(300)
+
                         ReviveSequence(currentDoctor, currentAmbulance)
                     end
                 end
@@ -292,21 +362,98 @@ end)
 function ReviveSequence(doctor, ambulance)
     local playerPed = PlayerPedId()
     local playerCoords = GetEntityCoords(playerPed)
+    local playerHeading = GetEntityHeading(playerPed)
+    local cprPos, doctorHeading = GetCPRPosition(playerPed)
 
-    RequestAnimDict("mini@cpr@char_a@cpr_str")
-    while not HasAnimDictLoaded("mini@cpr@char_a@cpr_str") do Wait(10) end
+    LoadAnimDicts({
+        "amb@medic@standing@kneel@base",
+        "amb@medic@standing@kneel@idle_a",
+        "amb@medic@standing@tendtodead@base",
+        "amb@medic@standing@tendtodead@idle_a",
+        "mini@cpr@char_a@cpr_str",
+        "get_up@directional@movement@from_knees@action",
+    })
 
-    TaskPlayAnim(doctor, "mini@cpr@char_a@cpr_str", "cpr_pumpchest", 8.0, 8.0, -1, 1, 0, false, false, false)
+    Notify(locale('notification_title'), locale('doctor_arrived'), 3000, "info")
+
+    TaskPlayAnimAdvanced(doctor,
+        "amb@medic@standing@kneel@base", "base",
+        cprPos.x, cprPos.y, cprPos.z,
+        0.0, 0.0, doctorHeading,
+        8.0, 8.0, -1, 1, 0.0, 2, 0
+    )
+    Wait(1500)
+
+    TaskPlayAnimAdvanced(doctor,
+        "amb@medic@standing@tendtodead@idle_a", "idle_a",
+        cprPos.x, cprPos.y, cprPos.z,
+        0.0, 0.0, doctorHeading,
+        8.0, 8.0, 4000, 49, 0.0, 2, 0
+    )
 
     lib.progressBar({
-        duration = 5000,
-        label = locale('receiving_treatment'),
+        duration = 4000,
+        label = locale('examining_patient'),
         useWhileDead = true,
         canCancel = false,
         disable = { move = true, car = true, combat = true, mouse = true },
     })
 
+    SetEntityCoords(doctor, cprPos.x, cprPos.y, cprPos.z, false, false, false, false)
+    SetEntityHeading(doctor, doctorHeading)
+    Wait(200)
+
+    TaskPlayAnimAdvanced(doctor,
+        "mini@cpr@char_a@cpr_str", "cpr_pumpchest",
+        cprPos.x, cprPos.y, cprPos.z,
+        0.0, 0.0, doctorHeading,
+        8.0, 8.0, -1, 1, 0.0, 2, 0
+    )
+
+    lib.progressBar({
+        duration = 6000,
+        label = locale('receiving_cpr'),
+        useWhileDead = true,
+        canCancel = false,
+        disable = { move = true, car = true, combat = true, mouse = true },
+    })
+
+    SetEntityCoords(doctor, cprPos.x, cprPos.y, cprPos.z, false, false, false, false)
+    SetEntityHeading(doctor, doctorHeading)
+    Wait(100)
+
+    TaskPlayAnim(doctor, "amb@medic@standing@tendtodead@idle_a", "idle_a", 8.0, 8.0, 3000, 49, 0, false, false, false)
+
+    lib.progressBar({
+        duration = 3000,
+        label = locale('checking_vitals'),
+        useWhileDead = true,
+        canCancel = false,
+        disable = { move = true, car = true, combat = true, mouse = true },
+    })
+
+    SetEntityCoords(doctor, cprPos.x, cprPos.y, cprPos.z, false, false, false, false)
+    SetEntityHeading(doctor, doctorHeading)
+    Wait(100)
+
+    -- TaskPlayAnimAdvanced(doctor,
+    --     "amb@medic@standing@tendtodead@base", "base",
+    --     cprPos.x, cprPos.y, cprPos.z,
+    --     0.0, 0.0, doctorHeading,
+    --     8.0, 8.0, -1, 49, 0.0, 2, 0
+    -- )
+
+    -- lib.progressBar({
+    --     duration = 4000,
+    --     label = locale('applying_defibrillator'),
+    --     useWhileDead = true,
+    --     canCancel = false,
+    --     disable = { move = true, car = true, combat = true, mouse = true },
+    -- })
+
     ClearPedTasks(doctor)
+    SetEntityCoords(doctor, cprPos.x, cprPos.y, cprPos.z, false, false, false, false)
+    SetEntityHeading(doctor, doctorHeading)
     TaskTurnPedToFaceEntity(doctor, playerPed, 1000)
 
     Wait(500)
@@ -329,7 +476,7 @@ function ReviveSequence(doctor, ambulance)
 
     ClearPedTasks(playerPed)
 
-    Notify("SAMS", locale('stabilized_transferring'), 5000, "success")
+    Notify(locale('notification_title'), locale('stabilized_transferring'), 5000, "success")
 
     local seatCoords = GetWorldPositionOfEntityBone(ambulance, GetEntityBoneIndexByName(ambulance, "door_pside_r"))
     local seatCoordsD = GetWorldPositionOfEntityBone(ambulance, GetEntityBoneIndexByName(ambulance, "door_pside_f"))
@@ -386,12 +533,12 @@ function ReviveSequence(doctor, ambulance)
 
                 local destination = GetClosestHospital()
                 if not destination then
-                    Notify("SAMS", locale('no_hospital_configured'), 5000, "error")
+                    Notify(locale('notification_title'), locale('no_hospital_configured'), 5000, "error")
                     CleanupService()
                     return
                 end
 
-                Notify("SAMS", locale('en_route_hospital', destination.name), 5000, "info")
+                Notify(locale('notification_title'), locale('en_route_hospital', destination.name), 5000, "info")
 
                 TaskVehicleDriveToCoord(doctor, ambulance, destination.dropOff.x, destination.dropOff.y,
                     destination.dropOff.z,
@@ -436,7 +583,8 @@ function ReviveSequence(doctor, ambulance)
                             Wait(500)
 
                             DoScreenFadeIn(1500)
-                            Notify("SAMS", locale('admitted_hospital', destination.name), 5000, "success")
+                            Notify(locale('notification_title'), locale('admitted_hospital', destination.name), 5000,
+                                "success")
 
                             RequestAnimDict("missfam4")
                             while not HasAnimDictLoaded("missfam4") do Wait(10) end
@@ -453,7 +601,7 @@ function ReviveSequence(doctor, ambulance)
         end
 
         if timeout >= 200 then
-            Notify("SAMS", locale('transfer_failed'), 5000, "error")
+            Notify(locale('notification_title'), locale('transfer_failed'), 5000, "error")
             CleanupService()
         end
     end)
@@ -474,7 +622,7 @@ end)
 exports('CancelService', function()
     if isServiceActive then
         CleanupService()
-        Notify("SAMS", locale('service_cancelled'), 5000, "info")
+        Notify(locale('notification_title'), locale('service_cancelled'), 5000, "info")
     end
 end)
 

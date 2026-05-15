@@ -3,9 +3,9 @@ game 'gta5'
 lua54 'yes'
 
 author 'Muhaddil'
-description 'Un script de ambulancias automaticas para FiveM'
+description 'An automated ambulance script for FiveM'
 
-version 'v1.0.1'
+version 'v1.0.2'
 
 shared_scripts {
     '@ox_lib/init.lua',

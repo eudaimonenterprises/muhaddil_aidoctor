@@ -58,15 +58,24 @@ local function GetOnlineEMS()
     return online
 end
 
+local function GetFinalPrice(skillCheckPassed)
+    local finalPrice = Config.Price
+    if skillCheckPassed and Config.SkillCheck and Config.SkillCheck.enabled then
+        finalPrice = math.floor(Config.Price * (1 - Config.SkillCheck.discount / 100))
+    end
+    return finalPrice
+end
+
 if FrameWork == 'esx' then
     ESX.RegisterServerCallback('muhaddil_aidoctor:checkConditions', function(src, cb)
         local xPlayer = GetPlayer(src)
         local hasMoney = false
 
         if xPlayer then
+            local minPrice = GetFinalPrice(true)
             local cash = xPlayer.getMoney()
             local bank = xPlayer.getAccount('bank').money
-            hasMoney = (cash >= Config.Price) or (bank >= Config.Price)
+            hasMoney = (cash >= minPrice) or (bank >= minPrice)
         end
 
         local emsOnline = GetOnlineEMS()
@@ -79,9 +88,10 @@ elseif FrameWork == 'qb' then
         local hasMoney = false
 
         if Player then
+            local minPrice = GetFinalPrice(true)
             local cash = Player.Functions.GetMoney('cash')
             local bank = Player.Functions.GetMoney('bank')
-            hasMoney = (cash >= Config.Price) or (bank >= Config.Price)
+            hasMoney = (cash >= minPrice) or (bank >= minPrice)
         end
 
         local emsOnline = GetOnlineEMS()
@@ -90,7 +100,7 @@ elseif FrameWork == 'qb' then
     end)
 end
 
-RegisterNetEvent('muhaddil_aidoctor:chargePlayer', function()
+RegisterNetEvent('muhaddil_aidoctor:chargePlayer', function(skillCheckPassed)
     local src = source
     local xPlayer = GetPlayer(src)
 
@@ -99,33 +109,34 @@ RegisterNetEvent('muhaddil_aidoctor:chargePlayer', function()
         return
     end
 
+    local finalPrice = GetFinalPrice(skillCheckPassed == true)
     local charged = false
 
     if FrameWork == 'qb' then
         local cash = xPlayer.Functions.GetMoney('cash')
-        if cash >= Config.Price then
-            xPlayer.Functions.RemoveMoney('cash', Config.Price, "ai-doctor-service")
+        if cash >= finalPrice then
+            xPlayer.Functions.RemoveMoney('cash', finalPrice, "ai-doctor-service")
             charged = true
         else
             local bank = xPlayer.Functions.GetMoney('bank')
-            if bank >= Config.Price then
-                xPlayer.Functions.RemoveMoney('bank', Config.Price, "ai-doctor-service")
+            if bank >= finalPrice then
+                xPlayer.Functions.RemoveMoney('bank', finalPrice, "ai-doctor-service")
                 charged = true
             end
         end
 
         if charged then
-            exports['qb-management']:AddMoney('ambulance', Config.Price)
+            exports['qb-management']:AddMoney('ambulance', finalPrice)
         end
     else
         local cash = xPlayer.getMoney()
-        if cash >= Config.Price then
-            xPlayer.removeMoney(Config.Price)
+        if cash >= finalPrice then
+            xPlayer.removeMoney(finalPrice)
             charged = true
         else
             local bank = xPlayer.getAccount('bank').money
-            if bank >= Config.Price then
-                xPlayer.removeAccountMoney('bank', Config.Price)
+            if bank >= finalPrice then
+                xPlayer.removeAccountMoney('bank', finalPrice)
                 charged = true
             end
         end
@@ -133,15 +144,16 @@ RegisterNetEvent('muhaddil_aidoctor:chargePlayer', function()
         if charged then
             TriggerEvent('esx_addonaccount:getSharedAccount', 'society_ambulance', function(account)
                 if account then
-                    account.addMoney(Config.Price)
+                    account.addMoney(finalPrice)
                 end
             end)
         end
     end
 
     if not charged then
-        print('^1[AI Doctor] Error: No se pudo cobrar al jugador ' .. src .. '^0')
+        print(locale("server_print_error", src))
     else
+        -- print('^2[AI Doctor] Cobrado $' .. finalPrice .. ' al jugador ' .. src .. (skillCheckPassed and ' (con descuento)' or '') .. '^0')
         if Config.RemoveItemsOnRevive then
             if FrameWork == 'qb' then
                 for k, v in pairs(xPlayer.PlayerData.items) do
