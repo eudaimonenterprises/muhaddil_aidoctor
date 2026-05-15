@@ -2,6 +2,8 @@ local currentVersion = GetResourceMetadata(GetCurrentResourceName(), 'version')
 local resourceRepo = 'Muhaddil/muhaddil_aidoctor'
 local githubApiUrl = 'https://api.github.com/repos/' .. resourceRepo .. '/releases/latest'
 
+lib.locale()
+
 local function daysAgo(dateStr)
     local year, month, day = dateStr:match("(%d+)-(%d+)-(%d+)")
     local releaseTime = os.time({ year = year, month = month, day = day })
@@ -13,11 +15,11 @@ end
 local function formatDate(releaseDate)
     local days = daysAgo(releaseDate)
     if days < 1 then
-        return "Today"
+        return locale('today')
     elseif days == 1 then
-        return "Yesterday"
+        return locale('yesterday')
     else
-        return days .. " days ago"
+        return locale('days_ago', days)
     end
 end
 
@@ -101,8 +103,8 @@ function fetchVersionData()
             if data and data.tag_name then
                 versionData.latestVersion = data.tag_name
                 versionData.releaseDate = formatDate(data.published_at or "Unknown")
-                versionData.notes = shortenTexts(data.body or "No notes available")
-                versionData.downloadUrl = shortenTexts(data.html_url or "No download link available")
+                versionData.notes = shortenTexts(data.body or locale('no_notes'))
+                versionData.downloadUrl = shortenTexts(data.html_url or locale('no_download'))
                 displayVersionData()
                 isUpdateAvailable = (versionData.latestVersion ~= currentVersion)
             else
@@ -121,21 +123,21 @@ function displayVersionData()
     if versionData.latestVersion then
         if versionData.latestVersion ~= currentVersion then
             print('╭────────────────────────────────────────────────────╮')
-            printCentered('[muhaddil_aidoctor] - New Version Available', boxWidth, '34') -- Blue
-            printWrapped('Current version: ' .. currentVersion, boxWidth, '32')            -- Green
-            printWrapped('Latest version: ' .. versionData.latestVersion, boxWidth, '33')  -- Yellow
-            printWrapped('Released: ' .. versionData.releaseDate, boxWidth, '33')          -- Yellow
-            printWrapped('Notes: ' .. versionData.notes, boxWidthNotes, '33')              -- Yellow
-            printWrapped('Download: ' .. versionData.downloadUrl, boxWidth, '32')          -- Green
+            printCentered(locale('update_available'), boxWidth, '34')                         -- Blue
+            printWrapped(locale('current_version', currentVersion), boxWidth, '32')           -- Green
+            printWrapped(locale('latest_version', versionData.latestVersion), boxWidth, '33') -- Yellow
+            printWrapped(locale('released', versionData.releaseDate), boxWidth, '33')         -- Yellow
+            printWrapped(locale('notes', versionData.notes), boxWidthNotes, '33')             -- Yellow
+            printWrapped(locale('download', versionData.downloadUrl), boxWidth, '32')         -- Green
             print('╰────────────────────────────────────────────────────╯')
         else
             print('╭────────────────────────────────────────────────────╮')
-            printWrapped('[muhaddil_aidoctor] - Up-to-date', boxWidth, '32')  -- Green
-            printWrapped('Current version: ' .. currentVersion, boxWidth, '32') -- Green
+            printWrapped(locale('up_to_date'), boxWidth, '32')                      -- Green
+            printWrapped(locale('current_version', currentVersion), boxWidth, '32') -- Green
             print('╰────────────────────────────────────────────────────╯')
         end
     else
-        printWithColor('[muhaddil_aidoctor] - No version data available.', '31') -- Red
+        printWithColor(locale('no_version_data'), '31') -- Red
     end
 end
 

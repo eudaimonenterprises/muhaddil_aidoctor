@@ -2,8 +2,8 @@
 
 An AI Doctor/Ambulance script for FiveM that provides medical assistance when no EMS are available.
 
-> [!IMPORTANT]
-> This is an old script I made a long time ago. It doesn't feature a localization system (locales) or fancy modern code structures, but it is fully functional and works as intended.
+<!-- > [!IMPORTANT]
+> This is an old script I made a long time ago. It doesn't feature a localization system (locales) or fancy modern code structures, but it is fully functional and works as intended. -->
 
 ## 🚑 Features
 

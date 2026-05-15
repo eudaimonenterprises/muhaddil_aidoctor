@@ -5,7 +5,7 @@ lua54 'yes'
 author 'Muhaddil'
 description 'Un script de ambulancias automaticas para FiveM'
 
-version 'v1.0.0'
+version 'v1.0.1'
 
 shared_scripts {
     '@ox_lib/init.lua',
@@ -21,4 +21,8 @@ server_script {
 
 client_script {
     'client/*.lua',
+}
+
+files {
+    'locales/*.json',
 }

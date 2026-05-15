@@ -18,6 +18,8 @@ else
     print('^1===NO SUPPORTED FRAMEWORK FOUND===^0')
 end
 
+lib.locale()
+
 local function GetPlayer(source)
     if FrameWork == 'qb' then
         return QBCore.Functions.GetPlayer(source)
@@ -31,16 +33,24 @@ local function GetOnlineEMS()
 
     if FrameWork == 'qb' then
         local Players = QBCore.Functions.GetQBPlayers()
+
         for _, Player in pairs(Players) do
-            if Player.PlayerData.job.name == 'ambulance' and Player.PlayerData.job.onduty then
+            local jobName = Player.PlayerData.job.name
+
+            if Config.EMSJobs[jobName] and Player.PlayerData.job.onduty then
                 online = online + 1
             end
         end
     else
         for _, id in ipairs(ESX.GetPlayers()) do
             local xPlayer = ESX.GetPlayerFromId(id)
-            if xPlayer and xPlayer.job.name == 'ambulance' then
-                online = online + 1
+
+            if xPlayer then
+                local jobName = xPlayer.job.name
+
+                if Config.EMSJobs[jobName] then
+                    online = online + 1
+                end
             end
         end
     end
@@ -214,7 +224,7 @@ RegisterCommand('aidoctorstats', function(source, args, rawCommand)
     if not isAdmin then
         TriggerClientEvent('chat:addMessage', src, {
             color = { 255, 0, 0 },
-            args = { "Sistema", "No tienes permisos para este comando" }
+            args = { "Sistema", locale('no_permissions') }
         })
         return
     end
@@ -223,10 +233,10 @@ RegisterCommand('aidoctorstats', function(source, args, rawCommand)
 
     TriggerClientEvent('chat:addMessage', src, {
         color = { 0, 255, 0 },
-        args = { "AI Doctor Stats", "EMS Online: " .. emsOnline .. " | Precio: $" .. Config.Price }
+        args = { "AI Doctor Stats", locale('stats_message', emsOnline, Config.Price) }
     })
 end, false)
 
-print('^2[AI Doctor] Sistema cargado correctamente^0')
-print('^3[AI Doctor] Framework detectado: ' .. (FrameWork or 'NINGUNO') .. '^0')
-print('^3[AI Doctor] Precio configurado: $' .. Config.Price .. '^0')
+print(locale('server_print_1'))
+print(locale('server_print_2', FrameWork or 'NINGUNO'))
+print(locale('server_print_3', Config.Price))

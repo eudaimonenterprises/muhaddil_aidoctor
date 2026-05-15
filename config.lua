@@ -1,6 +1,7 @@
 Config = {}
 
 Config.FrameWork = "auto"           -- "auto", "esx", "qb"
+Config.AutoVersionChecker = true    -- Auto check for updates
 
 Config.UseOXNotifications = true    -- Use ox_lib notifications or framework notifications
 
@@ -8,10 +9,15 @@ Config.CustomAmbulanceEvent = 'osp' -- 'osp', 'wasabi'
 
 Config.EMS = 2                      -- Amount of EMS online
 
-Config.Price = 2000                 -- Price of the service
+Config.EMSJobs = {                  -- Jobs that are counted as EMS
+    ambulance = true,
+    -- job = true, -- Example: If you have a job named 'doctor' you can add it here
+}
 
--- 787004 = conducción de emergencia (ignora semáforos)
--- 786603 = conducción normal con semáforos
+Config.Price = 2000 -- Price of the service
+
+-- 787004 = emergency driving (ignore traffic lights)
+-- 786603 = Normal driving with traffic lights
 Config.AmbulanceDriveFlag = 787004
 
 -- 30.0 = ~108 km/h

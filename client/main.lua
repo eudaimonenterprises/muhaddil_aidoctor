@@ -18,6 +18,8 @@ else
     print('===NO SUPPORTED FRAMEWORK FOUND===')
 end
 
+lib.locale()
+
 local isServiceActive = false
 local isDead = false
 local currentAmbulance = nil
@@ -156,22 +158,22 @@ end
 
 RegisterCommand("aidoctor", function()
     if isServiceActive then
-        Notify("SAMS", "Ya hay un servicio médico en curso", 5000, "error")
+        Notify("SAMS", locale('service_active'), 5000, "error")
         return
     end
 
     if not IsPlayerDead() then
-        Notify("SAMS", "No necesitas asistencia médica", 5000, "error")
+        Notify("SAMS", locale('no_assistance_needed'), 5000, "error")
         return
     end
 
     TriggerFWCallback('muhaddil_aidoctor:checkConditions', function(EMSOnline, hasMoney)
         if EMSOnline > Config.EMS then
             isServiceActive = false
-            Notify("SAMS", "Demasiados EMS en línea", 5000, "error")
+            Notify("SAMS", locale('too_many_ems'), 5000, "error")
         elseif not hasMoney then
             isServiceActive = false
-            Notify("SAMS", "No tienes suficiente dinero ($" .. Config.Price .. ")", 5000, "error")
+            Notify("SAMS", locale('not_enough_money', Config.Price), 5000, "error")
         else
             if isServiceActive then return end
             isServiceActive = true
@@ -200,7 +202,7 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
     local spawnPos, heading = GetDistantRoadPoint(playerCoords, minSpawnDistance, maxSpawnDistance)
 
     if not spawnPos then
-        Notify("SAMS", "No se pudo encontrar un camino distante.", 5000, "error")
+        Notify("SAMS", locale('road_not_found'), 5000, "error")
         isServiceActive = false
         return
     end
@@ -224,7 +226,7 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
     SetBlipScale(ambuBlip, 0.9)
     SetBlipColour(ambuBlip, 1)
     BeginTextCommandSetBlipName("STRING")
-    AddTextComponentString("AI Ambulance")
+    AddTextComponentString(locale('blip_name'))
     EndTextCommandSetBlipName(ambuBlip)
 
     CreateThread(function()
@@ -236,7 +238,7 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
         RemoveBlip(ambuBlip)
     end)
 
-    Notify("SAMS", "Ambulancia en camino a tu ubicación", 5000, "success")
+    Notify("SAMS", locale('ambulance_en_route'), 5000, "success")
 
     TaskVehicleDriveToCoord(currentDoctor, currentAmbulance, playerCoords.x, playerCoords.y, playerCoords.z,
         Config.DriveSpeedLevel, 0, vehicleHash, Config.AmbulanceDriveFlag, 2.0, true)
@@ -248,7 +250,7 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
             Wait(500)
             if not DoesEntityExist(currentAmbulance) then
                 CleanupService()
-                Notify("SAMS", "El servicio fue interrumpido", 5000, "error")
+                Notify("SAMS", locale('service_interrupted'), 5000, "error")
                 return
             end
 
@@ -298,7 +300,7 @@ function ReviveSequence(doctor, ambulance)
 
     lib.progressBar({
         duration = 5000,
-        label = 'Recibiendo tratamiento médico...',
+        label = locale('receiving_treatment'),
         useWhileDead = true,
         canCancel = false,
         disable = { move = true, car = true, combat = true, mouse = true },
@@ -327,7 +329,7 @@ function ReviveSequence(doctor, ambulance)
 
     ClearPedTasks(playerPed)
 
-    Notify("SAMS", "Has sido estabilizado. Serás trasladado al hospital.", 5000, "success")
+    Notify("SAMS", locale('stabilized_transferring'), 5000, "success")
 
     local seatCoords = GetWorldPositionOfEntityBone(ambulance, GetEntityBoneIndexByName(ambulance, "door_pside_r"))
     local seatCoordsD = GetWorldPositionOfEntityBone(ambulance, GetEntityBoneIndexByName(ambulance, "door_pside_f"))
@@ -384,12 +386,12 @@ function ReviveSequence(doctor, ambulance)
 
                 local destination = GetClosestHospital()
                 if not destination then
-                    Notify("SAMS", "¡No hay ningún hospital configurado!", 5000, "error")
+                    Notify("SAMS", locale('no_hospital_configured'), 5000, "error")
                     CleanupService()
                     return
                 end
 
-                Notify("SAMS", "En camino al hospital: " .. destination.name, 5000, "info")
+                Notify("SAMS", locale('en_route_hospital', destination.name), 5000, "info")
 
                 TaskVehicleDriveToCoord(doctor, ambulance, destination.dropOff.x, destination.dropOff.y,
                     destination.dropOff.z,
@@ -434,7 +436,7 @@ function ReviveSequence(doctor, ambulance)
                             Wait(500)
 
                             DoScreenFadeIn(1500)
-                            Notify("SAMS", "Has sido ingresado en " .. destination.name, 5000, "success")
+                            Notify("SAMS", locale('admitted_hospital', destination.name), 5000, "success")
 
                             RequestAnimDict("missfam4")
                             while not HasAnimDictLoaded("missfam4") do Wait(10) end
@@ -451,7 +453,7 @@ function ReviveSequence(doctor, ambulance)
         end
 
         if timeout >= 200 then
-            Notify("SAMS", "No se pudo completar el traslado", 5000, "error")
+            Notify("SAMS", locale('transfer_failed'), 5000, "error")
             CleanupService()
         end
     end)
@@ -472,7 +474,7 @@ end)
 exports('CancelService', function()
     if isServiceActive then
         CleanupService()
-        Notify("SAMS", "Servicio médico cancelado", 5000, "info")
+        Notify("SAMS", locale('service_cancelled'), 5000, "info")
     end
 end)
 
