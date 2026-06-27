@@ -1,6 +1,6 @@
 Config = {}
 
-Config.FrameWork = "auto"           -- "auto", "esx", "qb"
+Config.FrameWork = "qbx"           -- "qbx"
 Config.AutoVersionChecker = true    -- Auto check for updates
 
 Config.UseOXNotifications = true    -- Use ox_lib notifications or framework notifications
@@ -37,6 +37,7 @@ Config.RemoveItemsOnRevive = false -- Remove items on revive
 -- dropOff = Where the ambulance stops
 -- respawnSpot = Where the player respawns after the fade
 Config.DropOffSpots = {
+    -- === YOUR ORIGINAL HOSPITALS ===
     ['Centro Médico Ocean'] = {
         dropOff = vector4(-1808.7, -326.16, 43.3, 51.79),
         respawnSpot = vector4(-1863.86, -332.91, 49.44, 337.99)
@@ -49,4 +50,30 @@ Config.DropOffSpots = {
         dropOff = vector4(-247.01, 6331.24, 32.43, 222.88),
         respawnSpot = vector4(-254.88, 6324.50, 32.58, 315.00)
     },
+
+    -- === NEW REALISTIC STANDBY LOCATIONS (SPAWN AT DRIVWAYS) ===
+
+    -- Downtown Hub: Spawns the ambulance right outside the main city center fire station doors.
+    ['Estación Central de Bomberos'] = {
+        dropOff = vector4(211.23, -1648.51, 29.35, 320.0), 
+        respawnSpot = vector4(-1863.86, -332.91, 49.44, 337.99) -- Respawns at Ocean hospital fallback
+    },
+
+    -- North City Hub: Spawns the ambulance in the driveway of the prominent 3-bay Rockford Hills firehouse.
+    ['Estación de Bomberos Rockford Hills'] = {
+        dropOff = vector4(-641.53, -121.72, 38.0, 115.0), 
+        respawnSpot = vector4(-1863.86, -332.91, 49.44, 337.99) -- Respawns at Ocean hospital fallback
+    },
+
+    -- South City Hub: Spawns right outside the Davis Fire Station complex on Macdonald Street.
+    ['Estación de Bomberos Davis'] = {
+        dropOff = vector4(346.24, -1451.32, 29.28, 45.0), 
+        respawnSpot = vector4(-1863.86, -332.91, 49.44, 337.99) -- Respawns at Ocean hospital fallback
+    },
+
+    -- East City Hub: Spawns on Capital Boulevard right next to Fire Station 7 in El Burro Heights.
+    ['Estación de Bomberos El Burro'] = {
+        dropOff = vector4(1194.27, -1464.01, 34.84, 0.0), 
+        respawnSpot = vector4(-1863.86, -332.91, 49.44, 337.99) -- Respawns at Ocean hospital fallback
+    }
 }

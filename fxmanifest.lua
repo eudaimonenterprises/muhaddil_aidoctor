@@ -4,7 +4,6 @@ lua54 'yes'
 
 author 'Muhaddil'
 description 'An automated ambulance script for FiveM'
-
 version 'v1.0.2'
 
 shared_scripts {
@@ -12,14 +11,14 @@ shared_scripts {
     'config.lua',
 }
 
-server_script {
-    -- '@async/async.lua',
-    -- '@mysql-async/lib/MySQL.lua',
+-- FIXED: Added 's' to server_scripts and removed deprecated qbx load injection
+server_scripts {
     '@oxmysql/lib/MySQL.lua',
     'server/*.lua',
 }
 
-client_script {
+-- FIXED: Added 's' to client_scripts
+client_scripts {
     'client/*.lua',
 }
 

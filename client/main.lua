@@ -1,24 +1,7 @@
-if Config.FrameWork == "auto" then
-    if GetResourceState('es_extended') == 'started' then
-        ESX = exports['es_extended']:getSharedObject()
-        Framework = "esx"
-    elseif GetResourceState('qb-core') == 'started' then
-        QBCore = exports['qb-core']:GetCoreObject()
-        Framework = "qb"
-    else
-        print('===NO SUPPORTED FRAMEWORK FOUND===')
-    end
-elseif Config.FrameWork == "esx" and GetResourceState('es_extended') == 'started' then
-    ESX = exports['es_extended']:getSharedObject()
-    Framework = "esx"
-elseif Config.FrameWork == "qb" and GetResourceState('qb-core') == 'started' then
-    QBCore = exports['qb-core']:GetCoreObject()
-    Framework = "qb"
-else
-    print('===NO SUPPORTED FRAMEWORK FOUND===')
-end
-
 lib.locale()
+
+QBXCore = exports.qbx_core
+Framework = "qbx"
 
 local isServiceActive = false
 local isDead = false
@@ -31,65 +14,29 @@ local function Notify(msgtitle, msg, time, type2)
             title = msgtitle,
             description = msg,
             duration = time or 5000,
-            type = type2 or "info",
+            type = type2 or "info"
         })
     else
-        if Framework == 'qb' then
-            QBCore.Functions.Notify(msg, type2, time)
-        elseif Framework == 'esx' then
-            TriggerEvent('esx:showNotification', msg, type2, time)
-        end
+        QBXCore.Functions.Notify(msg, type2, time)
     end
 end
-
 local function TriggerFWCallback(name, cb, ...)
-    if Framework == 'esx' then
-        ESX.TriggerServerCallback(name, cb, ...)
-    elseif Framework == 'qb' then
-        QBCore.Functions.TriggerCallback(name, cb, ...)
-    end
+    lib.callback(name, false, cb, ...)
 end
-
 local function RevivePlayer()
     local ped = PlayerPedId()
 
-    if Framework == 'esx' then
-        TriggerEvent('esx_ambulancejob:revive')
-    elseif Framework == 'qb' then
-        TriggerEvent('hospital:client:Revive')
-        TriggerServerEvent('hospital:server:SetDeathStatus', false)
-        TriggerServerEvent('hospital:server:SetLaststandStatus', false)
-    end
+    TriggerEvent('hospital:client:Revive')
+    TriggerServerEvent('hospital:server:SetDeathStatus', false)
+    TriggerServerEvent('hospital:server:SetLaststandStatus', false)
 
     SetEntityHealth(ped, 200)
     ClearPedBloodDamage(ped)
 end
-
 local function IsPlayerDead()
-    local playerPed = PlayerPedId()
-
-    if IsEntityDead(playerPed) then
-        return true
-    end
-
-    if Config.CustomAmbulanceEvent == 'osp' then
-        isDead = exports["osp_ambulance"]:isDead()
-        return isDead
-    elseif Config.CustomAmbulanceEvent == 'wasabi' then
-        isDead = exports["wasabi_ambulance"]:isPlayerDead()
-        return isDead
-    end
-
-    if Framework == 'qb' then
-        local data = QBCore.Functions.GetPlayerData()
-        return data.metadata.isdead or data.metadata.inlaststand
-    elseif Framework == 'esx' then
-        return isDead
-    end
-
-    return false
+    local data = exports.qbx_core:GetPlayerData()
+    return data.metadata.isdead or data.metadata.inlaststand
 end
-
 function GetClosestHospital()
     local playerCoords = GetEntityCoords(PlayerPedId())
     local closest = nil
@@ -104,25 +51,41 @@ function GetClosestHospital()
     end
     return closest
 end
-
 local function GetDistantRoadPoint(origin, minDistance, maxDistance)
-    local tries = 30
-    for i = 1, tries do
-        local angle = math.random() * 2.0 * math.pi
-        local distance = math.random(minDistance, maxDistance)
-        local offset = vector3(
-            math.cos(angle) * distance,
-            math.sin(angle) * distance,
-            0.0
-        )
-        local testPos = origin + offset
-        local found, nodePos, heading = GetClosestVehicleNodeWithHeading(testPos.x, testPos.y, testPos.z, 1, 3.0, 0)
-        if found then
-            return nodePos, heading
+    -- 1. Locate the nearest configured medical center or standby fire station
+    local hospital = GetClosestHospital()
+    
+    -- Fallback: If no hospital configuration data is found, run your original random search near the player
+    if not hospital or not hospital.dropOff then
+        local tries = 30
+        for i = 1, tries do
+            local angle = math.random() * 2.0 * math.pi
+            local distance = math.random(minDistance, maxDistance)
+            local offset = vector3(math.cos(angle) * distance, math.sin(angle) * distance, 0.0)
+            local testPos = origin + offset
+            
+            -- Keeps your strict vehicle road node filter (0) to ignore sidewalks
+            local found, nodePos, heading = GetClosestVehicleNodeWithHeading(testPos.x, testPos.y, testPos.z, 0, 3.0, 0)
+            if found then return nodePos, heading end
         end
+        return nil, nil
     end
-    return nil, nil
+
+    -- 2. Extract the driveway coordinates from the closest location
+    local hospCoords = hospital.dropOff
+    
+    -- 3. Locate the main vehicular street node (0) closest to that driveway
+    -- This guarantees it spawns smoothly on the asphalt directly outside the station doors
+    local found, nodePos, heading = GetClosestVehicleNodeWithHeading(hospCoords.x, hospCoords.y, hospCoords.z, 0, 3.0, 0)
+    
+    if found and nodePos then
+        return nodePos, heading
+    end
+
+    -- Ultimate safety gate fallback if pathfinding nodes fail
+    return vector3(hospCoords.x, hospCoords.y, hospCoords.z), hospCoords.w or 0.0
 end
+
 
 local function CleanupService()
     if currentDoctor and DoesEntityExist(currentDoctor) then
@@ -134,10 +97,8 @@ local function CleanupService()
         DeleteVehicle(currentAmbulance)
         currentAmbulance = nil
     end
-
     isServiceActive = false
 end
-
 local function LoadAnimDicts(dicts)
     for _, dict in ipairs(dicts) do
         RequestAnimDict(dict)
@@ -145,8 +106,7 @@ local function LoadAnimDicts(dicts)
     for _, dict in ipairs(dicts) do
         while not HasAnimDictLoaded(dict) do Wait(10) end
     end
-end
-
+            end
 local function GetCPRPosition(patientPed)
     local patientCoords = GetEntityCoords(patientPed)
     local patientHeading = GetEntityHeading(patientPed)
@@ -164,27 +124,18 @@ local function GetCPRPosition(patientPed)
     local doctorHeading = (patientHeading - 90.0 + 360.0) % 360.0
 
     return cprPos, doctorHeading
-end
+    end
 
-if Framework == 'esx' then
-    RegisterNetEvent('esx:onPlayerDeath', function()
-        isDead = true
-    end)
+RegisterNetEvent('hospital:client:SetDeathStatus', function(status)
+    isDead = status
+end)
 
-    RegisterNetEvent('esx_ambulancejob:revive', function()
-        isDead = false
-    end)
-elseif Framework == 'qb' then
-    RegisterNetEvent('hospital:client:SetDeathStatus', function(status)
-        isDead = status
-    end)
+RegisterNetEvent('hospital:client:Revive', function()
+    isDead = false
+end)
 
-    RegisterNetEvent('hospital:client:Revive', function()
-        isDead = false
-    end)
-end
 
-RegisterCommand("aidoctor", function()
+RegisterNetEvent('muhaddil_aidoctor:triggerClientCommand', function()
     if isServiceActive then
         Notify(locale('notification_title'), locale('service_active'), 5000, "error")
         return
@@ -195,42 +146,49 @@ RegisterCommand("aidoctor", function()
         return
     end
 
-    TriggerFWCallback('muhaddil_aidoctor:checkConditions', function(EMSOnline, hasMoney)
-        if EMSOnline > Config.EMS then
-            isServiceActive = false
-            Notify(locale('notification_title'), locale('too_many_ems'), 5000, "error")
-        elseif not hasMoney then
-            isServiceActive = false
-            Notify(locale('notification_title'), locale('not_enough_money', Config.Price), 5000, "error")
-        else
-            if isServiceActive then return end
-            isServiceActive = true
+    -- Use ox_lib's callback system for a structured response
+    local response = lib.callback.await('muhaddil_aidoctor:checkConditions', false)
 
-            local skillCheckPassed = false
-            if Config.SkillCheck and Config.SkillCheck.enabled then
-                Notify(locale('notification_title'), locale('skill_check_prompt'), 5000, "info")
-                Wait(1000)
-
-                local success = lib.skillCheck(Config.SkillCheck.difficulty, Config.SkillCheck.inputs)
-
-                if success then
-                    skillCheckPassed = true
-                    local discountedPrice = math.floor(Config.Price * (1 - Config.SkillCheck.discount / 100))
-                    Notify(locale('notification_title'),
-                        locale('skill_check_success', Config.SkillCheck.discount, discountedPrice), 5000,
-                        "success")
-                else
-                    Notify(locale('notification_title'), locale('skill_check_fail', Config.Price), 5000, "error")
-                end
-
-                Wait(1500)
+    if not response or not response.status then
+        isServiceActive = false
+        if response and response.reason == "too_many_ems" then
+        Notify(locale('notification_title'), locale('too_many_ems'), 5000, "error")
+        elseif response and response.reason == "no_money" then
+        Notify(locale('notification_title'), locale('not_enough_money', Config.Price), 5000, "error")
+        elseif response and response.reason == "player_not_found" then
+            Notify(locale('notification_title'), "Error: Player data not found on server.", 5000, "error")
+    else
+            Notify(locale('notification_title'), "Error: Unknown condition check issue.", 5000, "error")
             end
+    else
+        -- If status is true, proceed with the service
+        if isServiceActive then return end -- Double check in case of race condition
+        isServiceActive = true
+        local skillCheckPassed = false
+        if Config.SkillCheck and Config.SkillCheck.enabled then
+            Notify(locale('notification_title'), locale('skill_check_prompt'), 5000, "info")
+            Wait(1000)
 
-            TriggerServerEvent("muhaddil_aidoctor:chargePlayer", skillCheckPassed)
-            TriggerEvent("muhaddil_aidoctor:reviveNPC")
+            local success = lib.skillCheck(Config.SkillCheck.difficulty, Config.SkillCheck.inputs)
+
+            if success then
+                skillCheckPassed = true
+                local discountedPrice = math.floor(Config.Price * (1 - Config.SkillCheck.discount / 100))
+                Notify(locale('notification_title'),
+                    locale('skill_check_success', Config.SkillCheck.discount, discountedPrice), 5000,
+                    "success")
+            else
+                Notify(locale('notification_title'), locale('skill_check_fail', Config.Price), 5000, "error")
+                        end
+
+            Wait(1500)
         end
-    end)
+
+        TriggerServerEvent("muhaddil_aidoctor:chargePlayer", skillCheckPassed)
+        TriggerEvent("muhaddil_aidoctor:reviveNPC")
+    end
 end)
+
 
 RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
     local playerPed = PlayerPedId()
@@ -257,7 +215,21 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
     end
 
     currentAmbulance = CreateVehicle(vehicleHash, spawnPos, heading, true, false)
+
+    if not DoesEntityExist(currentAmbulance) then
+        Notify(locale('notification_title'), locale('vehicle_spawn_failed'), 5000, "error")
+        isServiceActive = false
+        return
+    end
+
     currentDoctor = CreatePedInsideVehicle(currentAmbulance, 4, pedHash, -1, true, false)
+    Wait(10) -- Give game time to spawn ped
+    if not DoesEntityExist(currentDoctor) then
+        -- Fallback: create ped first, then warp
+        local tempPed = CreatePed(4, pedHash, playerCoords.x, playerCoords.y, playerCoords.z - 1.0, false, false)
+        TaskWarpPedIntoVehicle(tempPed, currentAmbulance, -1)
+        currentDoctor = tempPed
+    end
 
     SetEntityInvincible(currentDoctor, true)
     SetPedCanRagdoll(currentDoctor, false)
@@ -306,8 +278,28 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
 
     Notify(locale('notification_title'), locale('ambulance_en_route'), 5000, "success")
 
-    TaskVehicleDriveToCoord(currentDoctor, currentAmbulance, playerCoords.x, playerCoords.y, playerCoords.z,
-        Config.DriveSpeedLevel, 0, vehicleHash, Config.AmbulanceDriveFlag, 2.0, true)
+    -- === FORCE ALL-TERRAIN EMERGENCY PATHFINDING ===
+    SetDriverAbility(currentDoctor, 1.0)        -- 100% Driving skill
+    SetDriverAggressiveness(currentDoctor, 0.5) -- Full aggression to push other vehicles
+    SetPedConfigFlag(currentDoctor, 281, true)  -- Allowed to drive completely off-road / sidewalks
+
+    -- Flag 786603 tells the AI to navigate wide asphalt streets normally, 
+    -- but ignores red lights and stop signs safely.
+    local driveAnywhereFlag = 786603 
+
+    TaskVehicleDriveToCoord(
+        currentDoctor, 
+        currentAmbulance, 
+        playerCoords.x, 
+        playerCoords.y, 
+        playerCoords.z, 
+        Config.DriveSpeedLevel or 25.0, -- Safe but fast emergency speed
+        0, 
+        vehicleHash, 
+        smoothEmergencyFlag, 
+        4.0, -- Cushioned stop radius
+        true
+    )
 
     local meetPos = vector3(playerCoords.x, playerCoords.y, playerCoords.z)
 
@@ -322,37 +314,60 @@ RegisterNetEvent("muhaddil_aidoctor:reviveNPC", function()
 
             local ambCoords = GetEntityCoords(currentAmbulance)
             local distance = #(ambCoords - meetPos)
+            
+            -- Calculate precise vertical height separation
+            local heightDifference = math.abs(ambCoords.z - meetPos.z)
+            local currentVehicleSpeed = GetEntitySpeed(currentAmbulance)
 
-            if distance < 20.0 then
-                TaskVehicleTempAction(currentDoctor, currentAmbulance, 27, 2000)
-                Wait(2000)
+            -- === 1. SAME LEVEL ARRIVAL CONDITION ===
+            -- Triggers if within 20 meters, or within 45 meters and stopped on the same vertical grid layer
+            local arrivedOnSameLevel = (distance < 20.0) or (distance < 45.0 and currentVehicleSpeed < 1.0 and heightDifference <= 7.0)
+            
+            -- === 2. STRICT UNDERGROUND TUNNEL STOP GATE ===
+            -- ONLY flags a tunnel trap if the ambulance is directly below/above you (2D distance < 25.0),
+            -- on a completely different level (Z difference > 7.0), AND has come to a COMPLETE STOP (speed < 1.0).
+            -- This completely stops the script from triggering prematurely while the driver is passing through mid-route.
+            local caughtInTunnelAndStopped = (#(vector2(ambCoords.x, ambCoords.y) - vector2(meetPos.x, meetPos.y)) < 25.0) and (heightDifference > 7.0) and (currentVehicleSpeed < 1.0)
 
-                TaskLeaveVehicle(currentDoctor, currentAmbulance, 0)
-                Wait(3000)
+            if arrivedOnSameLevel or caughtInTunnelAndStopped then
+                
+                SetVehicleSiren(currentAmbulance, false)
+                SetSirenWithNoDriver(currentAmbulance, false)
+
+                if caughtInTunnelAndStopped then
+                    -- Cleanly delete the underground vehicle asset so it doesn't leave a ghost car block
+                    DeleteVehicle(currentAmbulance)
+                    currentAmbulance = nil
+                    
+                    -- Teleport the medic to your surface level, but safely 10 meters away on the plaza tiles 
+                    -- to give the AI engine a buffer before executing movement commands
+                    SetEntityCoords(currentDoctor, meetPos.x + 10.0, meetPos.y + 10.0, meetPos.z, false, false, false, false)
+                    Wait(500) -- Increased wait time to let the physics matrix finalize the surface coordinates
+                else
+                    -- Normal roadside exit if arrived on the correct street level
+                    TaskLeaveVehicle(currentDoctor, currentAmbulance, 0)
+                    Wait(2500)
+                end
 
                 ClearPedTasksImmediately(currentDoctor)
-                SetPedCanBeKnockedOffVehicle(currentDoctor, 1)
 
-                local cprPos, doctorHeading = GetCPRPosition(playerPed)
-                TaskGoToCoordAnyMeans(currentDoctor, cprPos.x, cprPos.y, cprPos.z, 1.5, 0, 0, 786603, 0xbf800000)
+                -- Force the paramedic to physically route over to your exact body position on foot
+                TaskGoToCoordAnyMeans(currentDoctor, meetPos.x, meetPos.y, meetPos.z, 3.0, 0, 0, 786603, 0xbf800000)
 
-                local docArrived = false
-                while not docArrived and isServiceActive do
-                    Wait(250)
+                -- LOCK CHECKPOINT: Keep the revival locked until the running medic is right next to you
+                local reachedPlayer = false
+                local timeout = 0
+                while not reachedPlayer and timeout < 400 do 
+                    Wait(50)
+                    timeout = timeout + 1
                     local docCoords = GetEntityCoords(currentDoctor)
-                    local docDist = #(docCoords - cprPos)
-
-                    if docDist < 2.0 then
-                        docArrived = true
-                        ClearPedTasksImmediately(currentDoctor)
-
-                        SetEntityCoords(currentDoctor, cprPos.x, cprPos.y, cprPos.z, false, false, false, false)
-                        SetEntityHeading(currentDoctor, doctorHeading)
-                        Wait(300)
-
-                        ReviveSequence(currentDoctor, currentAmbulance)
+                    if #(docCoords - meetPos) < 3.5 then
+                        reachedPlayer = true
                     end
                 end
+                
+                -- Fire the roadside progress bars only after they have safely arrived on foot
+                ReviveSequence(currentDoctor, currentAmbulance) 
                 break
             end
         end
@@ -396,7 +411,7 @@ function ReviveSequence(doctor, ambulance)
         label = locale('examining_patient'),
         useWhileDead = true,
         canCancel = false,
-        disable = { move = true, car = true, combat = true, mouse = true },
+        disable = { move = true, car = true, combat = true, mouse = true }
     })
 
     SetEntityCoords(doctor, cprPos.x, cprPos.y, cprPos.z, false, false, false, false)
@@ -415,7 +430,7 @@ function ReviveSequence(doctor, ambulance)
         label = locale('receiving_cpr'),
         useWhileDead = true,
         canCancel = false,
-        disable = { move = true, car = true, combat = true, mouse = true },
+        disable = { move = true, car = true, combat = true, mouse = true }
     })
 
     SetEntityCoords(doctor, cprPos.x, cprPos.y, cprPos.z, false, false, false, false)
@@ -429,27 +444,12 @@ function ReviveSequence(doctor, ambulance)
         label = locale('checking_vitals'),
         useWhileDead = true,
         canCancel = false,
-        disable = { move = true, car = true, combat = true, mouse = true },
+        disable = { move = true, car = true, combat = true, mouse = true }
     })
 
     SetEntityCoords(doctor, cprPos.x, cprPos.y, cprPos.z, false, false, false, false)
     SetEntityHeading(doctor, doctorHeading)
     Wait(100)
-
-    -- TaskPlayAnimAdvanced(doctor,
-    --     "amb@medic@standing@tendtodead@base", "base",
-    --     cprPos.x, cprPos.y, cprPos.z,
-    --     0.0, 0.0, doctorHeading,
-    --     8.0, 8.0, -1, 49, 0.0, 2, 0
-    -- )
-
-    -- lib.progressBar({
-    --     duration = 4000,
-    --     label = locale('applying_defibrillator'),
-    --     useWhileDead = true,
-    --     canCancel = false,
-    --     disable = { move = true, car = true, combat = true, mouse = true },
-    -- })
 
     ClearPedTasks(doctor)
     SetEntityCoords(doctor, cprPos.x, cprPos.y, cprPos.z, false, false, false, false)
@@ -462,8 +462,14 @@ function ReviveSequence(doctor, ambulance)
     Wait(1000)
 
     RevivePlayer()
-    SetEntityHealth(playerPed, 140)
+
+
+    TriggerEvent('qbx_medical:client:playerRevived')
+    TriggerServerEvent('qbx_medical:server:allHeal')
+
+    SetEntityHealth(playerPed, 200) -- CHANGE THIS to 200 so you are at full health right here
     isDead = false
+    isServiceActive = false
 
     RequestAnimDict("get_up@directional@movement@from_knees@action")
     while not HasAnimDictLoaded("get_up@directional@movement@from_knees@action") do Wait(10) end
@@ -476,134 +482,95 @@ function ReviveSequence(doctor, ambulance)
 
     ClearPedTasks(playerPed)
 
-    Notify(locale('notification_title'), locale('stabilized_transferring'), 5000, "success")
+    -- 1. Completely break the paramedic out of the healing animation loop
+    ClearPedTasks(doctor)
+    Wait(500) -- Crucial: gives the game engine a moment to clear the bones assignment
 
-    local seatCoords = GetWorldPositionOfEntityBone(ambulance, GetEntityBoneIndexByName(ambulance, "door_pside_r"))
-    local seatCoordsD = GetWorldPositionOfEntityBone(ambulance, GetEntityBoneIndexByName(ambulance, "door_pside_f"))
+        Notify(locale('notification_title'), "You have been fully treated and revived on the scene!", 5000, "success")
 
-    TaskGoToCoordAnyMeans(doctor, seatCoordsD.x, seatCoordsD.y, seatCoordsD.z, 1.5, 0, 0, 786603, 0xbf800000)
+    -- 2. Command the doctor to walk back to the driver's side and get in
+    TaskEnterVehicle(doctor, ambulance, -1, -1, 1.5, 1, 0)
 
-    RequestAnimSet("move_m@injured")
-    while not HasAnimSetLoaded("move_m@injured") do Wait(10) end
-    SetPedMovementClipset(playerPed, "move_m@injured", 0.2)
-
-    TaskGoToCoordAnyMeans(playerPed, seatCoords.x, seatCoords.y, seatCoords.z, 1.0, 0, 0, 786603, 0xbf800000)
-
+    -- 3. Run a background thread to wait until they are driving, then dismiss them
     CreateThread(function()
-        local reached = false
         local timeout = 0
-
-        while not reached and timeout < 200 do
+        
+        -- === CHANGE THIS CONDITION ===
+        -- Safety first: Make sure the vehicle and doctor exist.
+        -- Use "not IsPedInAnyVehicle" so it waits until the door physically clicks shut and they are fully seated.
+        while DoesEntityExist(ambulance) and DoesEntityExist(doctor) and not IsPedInAnyVehicle(doctor, false) and timeout < 300 do
             Wait(50)
             timeout = timeout + 1
-            local playerPos = GetEntityCoords(playerPed)
-            local dist = #(playerPos - seatCoords)
+        end
 
-            if dist < 5.0 then
-                reached = true
-                ClearPedTasksImmediately(playerPed)
-                ResetPedMovementClipset(playerPed, 0)
+        -- === ADD THIS SHORT CUSHION ===
+        -- Gives the game engine 1 second to load the AI driving brain after the door shuts.
+        Wait(1000) 
 
-                TaskWarpPedIntoVehicle(playerPed, ambulance, 2)
-                Wait(500)
+        -- Stop the thread gracefully if someone deleted the vehicle externally during the walk
+        if not DoesEntityExist(ambulance) or not DoesEntityExist(doctor) then return end
 
-                TaskWarpPedIntoVehicle(doctor, ambulance, -1)
-                Wait(1000)
+        -- Turn off emergency lights/sirens so they look like they are returning to base
+        SetVehicleSiren(ambulance, false)
+        SetSirenWithNoDriver(ambulance, false)
+        
+        -- === FIXED BACK-TO-BASE ROUTE (REPLACES WANDER) ===
+        -- 1. Grab the closest hospital coordinates again 
+        local destination = GetClosestHospital()
+        
+        -- 2. Turn off the passive event block so they can accept a vehicular routing task smoothly
+        SetBlockingOfNonTemporaryEvents(doctor, false)
 
-                SetEntityInvincible(playerPed, true)
-                FreezeEntityPosition(playerPed, true)
+        -- 3. Command the paramedic to physically shift into gear and drive back to the hospital drop-off point
+        -- Flag 786603 tells them to drive like a normal, safe civilian driver returning to base
+        if destination and destination.dropOff then
+            TaskVehicleDriveToCoord(
+                doctor, 
+                ambulance, 
+                destination.dropOff.x, 
+                destination.dropOff.y, 
+                destination.dropOff.z, 
+                15.0, -- Normal cruising speed (approx 35 MPH)
+                0, 
+                GetEntityModel(ambulance), 
+                786603, 
+                5.0, 
+                true
+            )
+        else
+            -- Absolute fallback if no config spots exist: wander normally with the event block dropped
+            TaskVehicleDriveWander(doctor, ambulance, 15.0, 786603)
+        end
 
-                CreateThread(function()
-                    while GetVehiclePedIsIn(playerPed, false) == ambulance and isServiceActive do
-                        Wait(0)
-                        DisableControlAction(0, 24, true)  -- Atacar
-                        DisableControlAction(0, 25, true)  -- Apuntar
-                        DisableControlAction(0, 21, true)  -- Correr
-                        DisableControlAction(0, 22, true)  -- Saltar
-                        DisableControlAction(0, 23, true)  -- Entrar vehículo
-                        DisableControlAction(0, 73, true)  -- Salir vehículo
-                        DisableControlAction(0, 75, true)  -- Salir vehículo
-                        DisableControlAction(0, 105, true) -- Acelerar
-                        DisableControlAction(0, 32, true)  -- W
-                        DisableControlAction(0, 33, true)  -- S
-                        DisableControlAction(0, 34, true)  -- A
-                        DisableControlAction(0, 35, true)  -- D
-                    end
-                end)
+        -- === FORCEFUL DISTANCE DESPAWN BACKUP TRACKER ===
+        local vehicleToClean = ambulance
+        local pedToClean = doctor
+        currentAmbulance = nil
+        currentDoctor = nil
 
-                local destination = GetClosestHospital()
-                if not destination then
-                    Notify(locale('notification_title'), locale('no_hospital_configured'), 5000, "error")
-                    CleanupService()
-                    return
-                end
+        SetEntityAsNoLongerNeeded(pedToClean)
+        SetEntityAsNoLongerNeeded(vehicleToClean)
 
-                Notify(locale('notification_title'), locale('en_route_hospital', destination.name), 5000, "info")
+        local totalWanderTime = 0
+        while DoesEntityExist(vehicleToClean) and totalWanderTime < 60 do 
+            Wait(500)
+            totalWanderTime = totalWanderTime + 1
+            
+            local playerPos = GetEntityCoords(PlayerPedId())
+            local ambPos = GetEntityCoords(vehicleToClean)
+            local currentDistance = #(playerPos - ambPos)
 
-                TaskVehicleDriveToCoord(doctor, ambulance, destination.dropOff.x, destination.dropOff.y,
-                    destination.dropOff.z,
-                    Config.DriveSpeedLevel, 0, GetEntityModel(ambulance), Config.AmbulanceDriveFlag, 2.0, true)
-
-                CreateThread(function()
-                    local arrived = false
-                    while not arrived and isServiceActive do
-                        Wait(500)
-                        if not DoesEntityExist(ambulance) then
-                            CleanupService()
-                            return
-                        end
-
-                        local ambPos = GetEntityCoords(ambulance)
-                        if #(ambPos - vector3(destination.dropOff.x, destination.dropOff.y, destination.dropOff.z)) < 20.0 then
-                            arrived = true
-
-                            TaskVehicleTempAction(doctor, ambulance, 27, 2000)
-                            Wait(2000)
-
-                            DoScreenFadeOut(1000)
-                            Wait(1500)
-
-                            TaskLeaveVehicle(playerPed, ambulance, 0)
-                            TaskLeaveVehicle(doctor, ambulance, 0)
-                            Wait(2000)
-
-                            SetEntityInvincible(playerPed, false)
-                            FreezeEntityPosition(playerPed, false)
-
-                            if DoesEntityExist(doctor) then
-                                DeletePed(doctor)
-                            end
-                            if DoesEntityExist(ambulance) then
-                                DeleteVehicle(ambulance)
-                            end
-
-                            SetEntityCoords(playerPed, destination.respawnSpot.x, destination.respawnSpot.y,
-                                destination.respawnSpot.z)
-                            SetEntityHeading(playerPed, destination.respawnSpot.w)
-                            Wait(500)
-
-                            DoScreenFadeIn(1500)
-                            Notify(locale('notification_title'), locale('admitted_hospital', destination.name), 5000,
-                                "success")
-
-                            RequestAnimDict("missfam4")
-                            while not HasAnimDictLoaded("missfam4") do Wait(10) end
-                            TaskPlayAnim(playerPed, "missfam4", "base", 1.0, -1.0, 3000, 0, 0, false, false, false)
-
-                            RevivePlayer()
-                            SetEntityHealth(playerPed, 200)
-
-                            CleanupService()
-                        end
-                    end
-                end)
+            -- The second they clear 120 meters on their route back to the firehouse/hospital, wipe them cleanly
+            if currentDistance > 120.0 then
+                if DoesEntityExist(pedToClean) then DeletePed(pedToClean) end
+                if DoesEntityExist(vehicleToClean) then DeleteVehicle(vehicleToClean) end
+                break
             end
         end
 
-        if timeout >= 200 then
-            Notify(locale('notification_title'), locale('transfer_failed'), 5000, "error")
-            CleanupService()
-        end
+        -- Absolute timeout fallback (e.g., caught at a local red light for 30 seconds right next to you)
+        if DoesEntityExist(pedToClean) then DeletePed(pedToClean) end
+        if DoesEntityExist(vehicleToClean) then DeleteVehicle(vehicleToClean) end
     end)
 end
 
@@ -631,3 +598,5 @@ AddEventHandler('onResourceStop', function(resourceName)
         CleanupService()
     end
 end)
+
+

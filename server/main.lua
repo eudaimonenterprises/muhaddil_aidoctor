@@ -1,104 +1,59 @@
-if Config.FrameWork == "auto" then
-    if GetResourceState('es_extended') == 'started' then
-        ESX = exports['es_extended']:getSharedObject()
-        FrameWork = 'esx'
-    elseif GetResourceState('qb-core') == 'started' then
-        QBCore = exports['qb-core']:GetCoreObject()
-        FrameWork = 'qb'
-    else
-        print('^1===NO SUPPORTED FRAMEWORK FOUND===^0')
-    end
-elseif Config.FrameWork == "esx" then
-    ESX = exports['es_extended']:getSharedObject()
-    FrameWork = 'esx'
-elseif Config.FrameWork == "qb" then
-    QBCore = exports['qb-core']:GetCoreObject()
-    FrameWork = 'qb'
-else
-    print('^1===NO SUPPORTED FRAMEWORK FOUND===^0')
-end
-
 lib.locale()
 
+-- QBXCore = exports.qbx_core
+FrameWork = 'qbx'
+
 local function GetPlayer(source)
-    if FrameWork == 'qb' then
-        return QBCore.Functions.GetPlayer(source)
-    else
-        return ESX.GetPlayerFromId(source)
-    end
+    return exports.qbx_core:GetPlayer(source)
 end
 
 local function GetOnlineEMS()
     local online = 0
+    local Players = exports.qbx_core:GetQBPlayers()
 
-    if FrameWork == 'qb' then
-        local Players = QBCore.Functions.GetQBPlayers()
-
-        for _, Player in pairs(Players) do
-            local jobName = Player.PlayerData.job.name
-
-            if Config.EMSJobs[jobName] and Player.PlayerData.job.onduty then
-                online = online + 1
-            end
-        end
-    else
-        for _, id in ipairs(ESX.GetPlayers()) do
-            local xPlayer = ESX.GetPlayerFromId(id)
-
-            if xPlayer then
-                local jobName = xPlayer.job.name
-
-                if Config.EMSJobs[jobName] then
-                    online = online + 1
-                end
-            end
+    for _, v in pairs(Players) do
+        if v.PlayerData.job.name == 'ambulance' and v.PlayerData.job.onduty then
+            online = online + 1
         end
     end
-
     return online
 end
 
 local function GetFinalPrice(skillCheckPassed)
-    local finalPrice = Config.Price
-    if skillCheckPassed and Config.SkillCheck and Config.SkillCheck.enabled then
-        finalPrice = math.floor(Config.Price * (1 - Config.SkillCheck.discount / 100))
+    local minPrice = 1000
+    local maxPrice = 2500
+
+    if skillCheckPassed then
+        minPrice = minPrice * 0.75
+        maxPrice = maxPrice * 0.75
     end
+
+    local randomPrice = math.random(minPrice, maxPrice)
+    local finalPrice = math.ceil(randomPrice / 100) * 100 -- Round to nearest hundred
+
     return finalPrice
 end
 
-if FrameWork == 'esx' then
-    ESX.RegisterServerCallback('muhaddil_aidoctor:checkConditions', function(src, cb)
-        local xPlayer = GetPlayer(src)
-        local hasMoney = false
+lib.callback.register('muhaddil_aidoctor:checkConditions', function(source)
+    local src = source
+    local xPlayer = exports.qbx_core:GetPlayer(src)
 
-        if xPlayer then
-            local minPrice = GetFinalPrice(true)
-            local cash = xPlayer.getMoney()
-            local bank = xPlayer.getAccount('bank').money
-            hasMoney = (cash >= minPrice) or (bank >= minPrice)
+    if not xPlayer then return { status = false, reason = "player_not_found" } end
+        local emsOnline = GetOnlineEMS()
+    local cashBalance = xPlayer.PlayerData.money.cash
+    local bankBalance = xPlayer.PlayerData.money.bank
+    local finalPrice = Config.Price
+
+    if emsOnline > Config.EMS then -- Assuming Config.EMS is your MaxEMS
+        return { status = false, reason = "too_many_ems" }
+    end
+
+    if cashBalance < finalPrice and bankBalance < finalPrice then
+        return { status = false, reason = "no_money" }
         end
 
-        local emsOnline = GetOnlineEMS()
-
-        cb(emsOnline, hasMoney)
-    end)
-elseif FrameWork == 'qb' then
-    QBCore.Functions.CreateCallback('muhaddil_aidoctor:checkConditions', function(src, cb)
-        local Player = GetPlayer(src)
-        local hasMoney = false
-
-        if Player then
-            local minPrice = GetFinalPrice(true)
-            local cash = Player.Functions.GetMoney('cash')
-            local bank = Player.Functions.GetMoney('bank')
-            hasMoney = (cash >= minPrice) or (bank >= minPrice)
-        end
-
-        local emsOnline = GetOnlineEMS()
-
-        cb(emsOnline, hasMoney)
-    end)
-end
+    return { status = true, price = finalPrice }
+end)
 
 RegisterNetEvent('muhaddil_aidoctor:chargePlayer', function(skillCheckPassed)
     local src = source
@@ -112,42 +67,76 @@ RegisterNetEvent('muhaddil_aidoctor:chargePlayer', function(skillCheckPassed)
     local finalPrice = GetFinalPrice(skillCheckPassed == true)
     local charged = false
 
-    if FrameWork == 'qb' then
-        local cash = xPlayer.Functions.GetMoney('cash')
-        if cash >= finalPrice then
-            xPlayer.Functions.RemoveMoney('cash', finalPrice, "ai-doctor-service")
+    local cash = xPlayer.PlayerData.money.cash
+    if cash >= finalPrice then
+        xPlayer.Functions.RemoveMoney('cash', finalPrice, "ai-doctor-service")
+        charged = true
+    else
+        local bank = xPlayer.PlayerData.money.bank
+        if bank >= finalPrice then
+            xPlayer.Functions.RemoveMoney('bank', finalPrice, "ai-doctor-service")
             charged = true
-        else
-            local bank = xPlayer.Functions.GetMoney('bank')
-            if bank >= finalPrice then
-                xPlayer.Functions.RemoveMoney('bank', finalPrice, "ai-doctor-service")
-                charged = true
-            end
         end
+    end
 
-        if charged then
-            exports['qb-management']:AddMoney('ambulance', finalPrice)
+    if charged then
+        TriggerClientEvent('QBXCore:Notify', src, 'Has sido atendido por el Dr. AI. Se te ha cobrado ' .. string.format("%d", finalPrice) .. '.', 'success')
+    else
+        TriggerClientEvent('QBXCore:Notify', src, 'No tienes suficiente dinero para ser atendido por el Dr. AI.', 'error')
+    end
+end)
+
+RegisterNetEvent('muhaddil_aidoctor:setDoctorLocation', function(coords)
+    local src = source
+    local xPlayer = GetPlayer(src)
+
+    if not xPlayer then return end
+
+    local isAdmin = exports.qbx_core:HasPermission(src, 'admin')
+
+    if isAdmin then
+        local configFilePath = 'resources/[qb]/muhaddil_aidoctor/config.lua'
+        local fileContent = LoadResourceFile(GetCurrentResourceName(), configFilePath)
+
+        if fileContent then
+            local newContent = string.gsub(fileContent, 'Config.DoctorLocation = vector3%(-?%d+%.?%d*, -?%d+%.?%d*, -?%d+%.?%d*%)', 'Config.DoctorLocation = vector3(' .. coords.x .. ', ' .. coords.y .. ', ' .. coords.z .. ')')
+            SaveResourceFile(GetCurrentResourceName(), configFilePath, newContent, -1)
+            TriggerClientEvent('QBXCore:Notify', src, '¡Ubicación del Dr. AI actualizada en la configuración!', 'success')
+            -- This is a server-side change, usually requires a resource restart to take effect on the server.
+            -- For client-side, you might want to send an update.
+        else
+            TriggerClientEvent('QBXCore:Notify', src, 'Error: No se pudo leer el archivo de configuración.', 'error')
         end
     else
-        local cash = xPlayer.getMoney()
-        if cash >= finalPrice then
-            xPlayer.removeMoney(finalPrice)
-            charged = true
-        else
-            local bank = xPlayer.getAccount('bank').money
-            if bank >= finalPrice then
-                xPlayer.removeAccountMoney('bank', finalPrice)
-                charged = true
-            end
-        end
+        TriggerClientEvent('QBXCore:Notify', src, 'No tienes permiso para hacer esto.', 'error')
+    end
+end)
 
-        if charged then
-            TriggerEvent('esx_addonaccount:getSharedAccount', 'society_ambulance', function(account)
-                if account then
-                    account.addMoney(finalPrice)
-                end
-            end)
+RegisterNetEvent('muhaddil_aidoctor:chargePlayer', function(skillCheckPassed)
+    local src = source
+    local xPlayer = GetPlayer(src)
+    if not xPlayer then
+        print('^1[AI Doctor] Error: Jugador no encontrado^0')
+        return
+    end
+
+    local finalPrice = GetFinalPrice(skillCheckPassed == true)
+    local charged = false
+
+    local cash = xPlayer.PlayerData.money.cash
+    if cash >= finalPrice then
+        xPlayer.Functions.RemoveMoney('cash', finalPrice, "ai-doctor-service")
+        charged = true
+    else
+        local bank = xPlayer.PlayerData.money.bank
+        if bank >= finalPrice then
+            xPlayer.Functions.RemoveMoney('bank', finalPrice, "ai-doctor-service")
+            charged = true
         end
+    end
+
+    if charged then
+        exports['qb-management']:AddMoney('ambulance', finalPrice)
     end
 
     if not charged then
@@ -155,17 +144,8 @@ RegisterNetEvent('muhaddil_aidoctor:chargePlayer', function(skillCheckPassed)
     else
         -- print('^2[AI Doctor] Cobrado $' .. finalPrice .. ' al jugador ' .. src .. (skillCheckPassed and ' (con descuento)' or '') .. '^0')
         if Config.RemoveItemsOnRevive then
-            if FrameWork == 'qb' then
-                for k, v in pairs(xPlayer.PlayerData.items) do
-                    xPlayer.Functions.RemoveItem(v.name, v.amount)
-                end
-            else
-                for i = 1, #xPlayer.inventory, 1 do
-                    local item = xPlayer.inventory[i]
-                    if item and item.count > 0 then
-                        xPlayer.removeInventoryItem(item.name, item.count)
-                    end
-                end
+            for k, v in pairs(xPlayer.PlayerData.items) do
+                exports.ox_inventory:RemoveItem(src, v.name, v.amount)
             end
         end
     end
@@ -220,35 +200,34 @@ RegisterNetEvent('muhaddil_aidoctor:logService', function(playerName)
 end)
 ]] --
 
-RegisterCommand('aidoctorstats', function(source, args, rawCommand)
-    local src = source
-    local xPlayer = GetPlayer(src)
+lib.addCommand('aidoctor', {
+    help = 'Call the AI Doctor for assistance',
+    description = 'Summons an AI Doctor to your location if you are incapacitated.',
+    params = {},
+}, function(source, args, rawCommand)
+    TriggerClientEvent('muhaddil_aidoctor:triggerClientCommand', source)
+end)
 
+lib.addCommand('aidoctorstats', {
+    help = 'Check AI Doctor metrics & prices',
+    restricted = 'group.admin' -- Natively blocks anyone who isn't a txAdmin/server administrator
+}, function(source, args, rawCommand)
+    local src = source          
+    -- In Qbox, players are fetched directly via exports if you need their state data
+    local xPlayer = exports.qbx_core:GetPlayer(src)
     if not xPlayer then return end
 
-    local isAdmin = false
-    if FrameWork == 'qb' then
-        isAdmin = QBCore.Functions.HasPermission(src, 'admin')
-    else
-        isAdmin = xPlayer.getGroup() == 'admin' or xPlayer.getGroup() == 'superadmin'
-    end
-
-    if not isAdmin then
-        TriggerClientEvent('chat:addMessage', src, {
-            color = { 255, 0, 0 },
-            args = { "Sistema", locale('no_permissions') }
-        })
-        return
-    end
-
+    -- Safe execution loop for your medical script functions
     local emsOnline = GetOnlineEMS()
 
     TriggerClientEvent('chat:addMessage', src, {
         color = { 0, 255, 0 },
         args = { "AI Doctor Stats", locale('stats_message', emsOnline, Config.Price) }
     })
-end, false)
+end)
 
 print(locale('server_print_1'))
 print(locale('server_print_2', FrameWork or 'NINGUNO'))
 print(locale('server_print_3', Config.Price))
+
+

@@ -10,14 +10,15 @@ An AI Doctor/Ambulance script for FiveM that provides medical assistance when no
 - **AI Paramedic & Ambulance**: Spawns an AI-controlled ambulance that drives to your location.
 - **Medical Treatment**: The paramedic performs a CPR animation and stabilizes you on-site.
 - **Hospital Transport**: Once stabilized, you are taken to the nearest hospital for full recovery.
-- **Framework Support**: Automatically detects and works with **ESX** and **QB-Core**.
+- **Framework Support**: Exclusively designed for **Qbox (`qbx_core`)**.
 - **Configurable**: Easily adjust the service price, EMS limit, driving speed, and hospital locations.
 - **Integration**: Uses `ox_lib` for progress bars and notifications (optional).
 
 ## 📋 Requirements
 
 - [ox_lib](https://github.com/CommunityOx/ox_lib)
-- [es_extended](https://github.com/esx-framework/esx_core) OR [qb-core](https://github.com/qbcore-framework/qb-core)
+
+- [qbx_core](https://github.com/Qbox-project/qbx_core)
 - [oxmysql](https://github.com/CommunityOx/oxmysql)
 
 ## 🚀 Installation
@@ -45,8 +46,7 @@ When a player is dead or in a "last stand" state, they can use the following com
 
 You can customize the script in `config.lua`:
 
-```lua
-Config.FrameWork = "auto"           -- "auto", "esx", "qb"
+Config.FrameWork = "qbx"           -- "qbx"
 Config.UseOXNotifications = true    -- Use ox_lib notifications
 Config.EMS = 2                      -- Max EMS online to allow AI service
 Config.Price = 2000                 -- Price of the service
